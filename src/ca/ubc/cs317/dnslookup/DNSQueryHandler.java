@@ -19,17 +19,43 @@ public class DNSQueryHandler {
     private static final Random random = new Random();
 
     private static int questionLength = 0;
-
     //For testing
     private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
     public static String bytesToHex(byte[] bytes) {
         byte[] hexChars = new byte[bytes.length * 2];
-        for (int j = 0; j < bytes.length; j++) {
-            int v = bytes[j] & 0xFF;
-            hexChars[j * 2] = (byte) HEX_ARRAY[v >>> 4];
-            hexChars[j * 2 + 1] = (byte) HEX_ARRAY[v & 0x0F];
+        for (int i = 0; i < bytes.length; i++) {
+            int b = bytes[i] & 0xFF;
+            hexChars[b * 2] = (byte) HEX_ARRAY[b >>> 4];
+            hexChars[(b * 2) + 1] = (byte) HEX_ARRAY[b & 0x0F];
         }
         return new String(hexChars, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Parses a byte array to extract the name field for a Resource Record
+     * @param data Byte array the source message to be parsed.
+     * @param offset The integer offset into the data array.
+     * @return the fqdn corresponding to the RRs name or value field.
+     */
+    //TODO: Implement this function: main parsing loop, a correct recursion, think if it is possible for there to be normal tags
+    //      after a pointer, like maybe a pointer to www then comes back and there's tags for the rest of the domain hmmm...
+    private static String parseName(byte[] data, int offset) {
+        int firstTag = data[offset] & 0xFF;
+        String res = "";
+
+        //Check if ptr
+        if ((firstTag >>> 6) == 3) {
+            //parse ptr and do the recursive call
+            int gotoOffset = ((((data[offset] & 0xFF) << 8) + (data[offset + 1] & 0xFF))) & 0x3FFF;
+            return parseName(data, gotoOffset);
+        } else {
+            while (firstTag != 0) {
+
+
+                firstTag = data[offset];
+            }
+        }
+        return res;
     }
 
     /**
@@ -68,13 +94,11 @@ public class DNSQueryHandler {
      */
     public static DNSServerResponse buildAndSendQuery(byte[] message, InetAddress server,
                                                       DNSNode node) throws IOException {
-        // TODO (PART 1): Implement this
         //Building query header
         int offset = 0;
         byte[] ID = new byte[2];
         random.nextBytes(ID);
-        //TODO: Right way of doing this???
-        int transactionID = (ID[0] << 8)+ ID[1];
+        int transactionID = ((((ID[0] & 0xFF) << 8) + (ID[1] & 0xFF))) & 0xFFFF;
 
         while (offset < 2) {
             message[offset] = ID[offset];
@@ -110,10 +134,14 @@ public class DNSQueryHandler {
             System.out.println(qID);
         }
         /*
-        String msg = bytesToHex(message);
+        byte[] temp = new byte[questionLength];
+        for (int i = 0; i < questionLength; i++) {
+            temp[i] = message[i + 12];
+        }
+        String msg = bytesToHex(temp);
         System.out.println(msg);
         */
-        //TODO: make sure you've correctly counted the length!
+
         //Sending the Query and decoding the response.
         ByteBuffer responseContents;
         DNSServerResponse response;
@@ -142,7 +170,7 @@ public class DNSQueryHandler {
         }
         responseContents = ByteBuffer.wrap(rp.getData());
         return (new DNSServerResponse(responseContents, transactionID));
-        //IT WORKS! TODO: ERROR HANDLING, MORE TESTING.
+        //TODO: ERROR HANDLING, MORE TESTING.
     }
 
     /**
@@ -166,24 +194,15 @@ public class DNSQueryHandler {
         int RCODE = response[3] & 0x0F;
 
         //3. Get RR counts
-        int ansCount = (response[6] << 8) + response[7]; //TODO: check this is how you put the bytes together.
-        int nsCount = (response[8] << 8) + response[9];
-        int otherCount = (response[10] << 8) + response[11];
+        int ansCount = (((response[6] & 0xFF) << 8) + (response[7] & 0xFF)) & 0xFFFF;
+        int nsCount = (((response[8] & 0xFF) << 8) + (response[9] & 0xFF)) & 0xFFFF;
+        int otherCount = (((response[10] & 0xFF) << 8) + (response[11] & 0xFF)) & 0xFFFF;
 
         //5. Cache literally all RRs returned.
-        int RRoffset = questionLength + 11;
+        int RRoffset = questionLength + 12;
+        String name = parseName(response, RRoffset);
 
-        for (int i = 0 ; i < ansCount ; i++) {
-            //TODO: I think we do something special
-        }
-
-        for (int i = 0 ; i < nsCount ; i++) {
-            //TODO: cache and save in set to return
-        }
-
-        for (int i = 0 ; i < otherCount ; i++) {
-            //TODO: just cache
-        }
+        //for data field what do depends on type, we can have a switch statement to handle that!
 
         //Return is the name servers, regardless of the category they're under!
         return null;
